@@ -1,0 +1,4 @@
+- targets:
+    - https://facebook.com
+  labels:
+    job: 'Staging'

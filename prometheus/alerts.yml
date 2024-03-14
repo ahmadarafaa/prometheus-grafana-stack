@@ -1,0 +1,144 @@
+groups:
+- name: "Alerts"
+  rules:
+  # Alert for any instance that is unreachable for >3 minutes.
+  - alert: InstanceDown
+    expr: up == 0
+    for: 2m
+    labels:
+      severity: page
+    annotations:
+      summary: "Instance {{ $labels.instance }} down"
+      description: "{{ $labels.instance }} of job {{ $labels.job }} has been down for more than 2 minutes."
+
+  - alert: HighLatency
+    expr: job:request_latency_seconds:mean5m{job="myjob"} > 0.5
+    for: 10m
+    labels:
+      severity: warning
+    annotations:
+      summary: High latency is detected
+      description: "Latency is higher than 0.5s (current value: {{ $value }}s)"
+
+  - alert: VeryHighLatency
+    expr: job:request_latency_seconds:mean5m{job="myjob"} > 1
+    for: 10m
+    labels:
+      severity: critical
+    annotations:
+      summary: Very high latency is detected
+      description: "Latency is higher than 1s (current value: {{ $value }}s)"
+
+  - alert: PrometheusTargetMissing
+    expr: up == 0
+    for: 0m
+    labels:
+      severity: critical
+    annotations:
+      summary: Prometheus target missing (instance {{ $labels.instance }})
+      description: "A Prometheus target has disappeared. An exporter might be crashed.\n"
+
+  - alert: PrometheusTooManyRestarts
+    expr: changes(process_start_time_seconds{job=~"prometheus|pushgateway|alertmanager"}[15m]) > 2
+    for: 0m
+    labels:
+      severity: warning
+    annotations:
+      summary: Prometheus too many restarts (instance {{ $labels.instance }})
+      description: "Prometheus has restarted more than twice in the last 15 minutes. It might be crashlooping.\n"
+
+  - alert: PrometheusAlertmanagerJobMissing
+    expr: absent(up{job="alertmanager"})
+    for: 0m
+    labels:
+      severity: warning
+    annotations:
+      summary: Prometheus AlertManager job missing (instance {{ $labels.instance }})
+      description: "A Prometheus AlertManager job has disappeared\n"
+
+  - alert: HostOutOfMemory
+    expr: (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes * 100 < 10) * on(instance) group_left (nodename) node_uname_info{nodename=~".+"}
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: Host out of memory (instance {{ $labels.instance }})
+      description: "Node memory is filling up (< 10% left)\n"
+
+  - alert: HostMemoryUnderMemoryPressure
+    expr: (rate(node_vmstat_pgmajfault[1m]) > 1000) * on(instance) group_left (nodename) node_uname_info{nodename=~".+"}
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: Host memory under memory pressure (instance {{ $labels.instance }})
+      description: "The node is under heavy memory pressure. High rate of major page faults\n"
+
+  # You may want to increase the alert manager 'repeat_interval' for this type of alert to daily or weekly
+  - alert: HostMemoryIsUnderutilized
+    expr: (100 - (avg_over_time(node_memory_MemAvailable_bytes[30m]) / node_memory_MemTotal_bytes * 100) < 20) * on(instance) group_left (nodename) node_uname_info{nodename=~".+"}
+    for: 1w
+    labels:
+      severity: info
+    annotations:
+      summary: Host Memory is underutilized (instance {{ $labels.instance }})
+      description: "Node memory is < 20% for 1 week. Consider reducing memory space. (instance {{ $labels.instance }})\n"
+
+  - alert: HostUnusualNetworkThroughputIn
+    expr: (sum by (instance) (rate(node_network_receive_bytes_total[2m])) / 1024 / 1024 > 100) * on(instance) group_left (nodename) node_uname_info{nodename=~".+"}
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: Host unusual network throughput in (instance {{ $labels.instance }})
+      description: "Host network interfaces are probably receiving too much data (> 100 MB/s)\n"
+
+  - alert: HostUnusualNetworkThroughputOut
+    expr: (sum by (instance) (rate(node_network_transmit_bytes_total[2m])) / 1024 / 1024 > 100) * on(instance) group_left (nodename) node_uname_info{nodename=~".+"}
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: Host unusual network throughput out (instance {{ $labels.instance }})
+      description: "Host network interfaces are probably sending too much data (> 100 MB/s)\n"
+
+  # Please add ignored mountpoints in node_exporter parameters like
+  # "--collector.filesystem.ignored-mount-points=^/(sys|proc|dev|run)($|/)".
+  # Same rule using "node_filesystem_free_bytes" will fire when disk fills for non-root users.
+  - alert: HostOutOfDiskSpace
+    expr: ((node_filesystem_avail_bytes * 100) / node_filesystem_size_bytes < 10 and ON (instance, device, mountpoint) node_filesystem_readonly == 0) * on(instance) group_left (nodename) node_uname_info{nodename=~".+"}
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: Host out of disk space (instance {{ $labels.instance }})
+      description: "Disk is almost full (< 10% left)\n"
+
+  - alert: HostHighCpuLoad
+    expr: (sum by (instance) (avg by (mode, instance) (rate(node_cpu_seconds_total{mode!="idle"}[2m]))) > 0.8) * on(instance) group_left (nodename) node_uname_info{nodename=~".+"}
+    for: 10m
+    labels:
+      severity: warning
+    annotations:
+      summary: Host high CPU load (instance {{ $labels.instance }})
+      description: "CPU load is > 80%\n"
+
+  - alert: HostSwapIsFillingUp
+    expr: ((1 - (node_memory_SwapFree_bytes / node_memory_SwapTotal_bytes)) * 100 > 80) * on(instance) group_left (nodename) node_uname_info{nodename=~".+"}
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: Host swap is filling up (instance {{ $labels.instance }})
+      description: "Swap is filling up (>80%)\n"
+
+  ### Blackbox
+  - alert: BlackboxProbeHttpFailure
+    expr: probe_http_status_code <= 199 OR probe_http_status_code >= 400
+    for: 0m
+    labels:
+      severity: critical
+    annotations:
+      summary: The domain {{ $labels.instance }} is DOWN!!!
+      description: "HTTP status code is not 200-399\n"
+
